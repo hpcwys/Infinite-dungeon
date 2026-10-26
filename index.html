@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>무한 던전</title>
+<style>
+:root{--bg:#e2e7ee;--card:#f6f8fb;--ink:#1d2433;--mut:#66708a;--line:#c8d0de;--acc:#6a4fd8;--hp:#c2413a;--xp:#2c7bd6;--ok:#1f9a6e;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#181d27;--ink:#e6e9f0;--mut:#8f99b2;--line:#2b3345;--acc:#9d86ff;--hp:#e5534b;--xp:#58a6ff;--ok:#3ecf94;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1218;--card:#181d27;--ink:#e6e9f0;--mut:#8f99b2;--line:#2b3345;--acc:#9d86ff;--hp:#e5534b;--xp:#58a6ff;--ok:#3ecf94;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+#app{max-width:480px;margin:0 auto;padding:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+h1{font-size:26px;font-weight:800;margin:6px 0 4px;text-align:center}
+.m{color:var(--mut);font-size:13px}
+.row{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.bar{height:9px;background:var(--line);border-radius:5px;overflow:hidden;margin:4px 0}
+.bar i{display:block;height:100%;transition:width .1s}
+button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+button.p{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:700}
+:root:not([data-theme="light"]) button.p{color:#12091f}
+button:disabled{opacity:.45;cursor:default}
+button.on{border-color:var(--acc);color:var(--acc);font-weight:700}
+.big{width:100%;padding:13px;font-size:16px}
+.es{display:flex;gap:8px;flex-wrap:wrap}
+.e{flex:1;min-width:92px;text-align:center;border:1px solid var(--line);border-radius:12px;padding:8px}
+.e b{display:block;font-size:12px}
+.em{font-size:34px;line-height:1.1}
+.fl{border-color:var(--hp)}
+#log{font-size:13px;color:var(--mut);min-height:118px}
+#log div:first-child{color:var(--ink);font-weight:600}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:9}
+#modal>div{background:var(--card);border-radius:16px;padding:16px;width:100%;max-width:420px;border:1px solid var(--line)}
+.opt{display:block;width:100%;text-align:left;margin-top:8px}
+.chip{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:12px;padding:1px 8px;margin:2px}
+</style>
+</head>
+<body>
+<div id="app">
+ <div id="lobby"></div>
+ <div id="game" hidden>
+  <div class="card" id="hud"></div>
+  <div class="card" id="arena"></div>
+  <div class="card" id="log"></div>
+  <button class="p big" id="bn" data-a="go">다음 층으로 ▶</button>
+  <div class="row" style="margin:8px 0;flex-wrap:wrap;justify-content:flex-start">
+   <button data-a="pot" id="bp">🧪 회복약</button>
+   <button data-a="spd" data-v="1">×1</button><button data-a="spd" data-v="2">×2</button><button data-a="spd" data-v="4">×4</button>
+   <button data-a="auto" id="ba">자동 진행</button>
+  </div>
+  <div class="card" id="abl"></div>
+ </div>
+</div>
+<div id="modal" hidden><div></div></div>
+<script>
+const $=s=>document.querySelector(s),R=(a,b)=>a+Math.random()*(b-a),RI=(a,b)=>Math.floor(R(a,b+1)),pick=a=>a[RI(0,a.length-1)],C=Math.ceil;
+const SK='infdun_v1';
+let M={souls:0,best:0,runs:0,up:{atk:0,hp:0,gold:0,xp:0,luck:0}},G=null;
+try{const d=JSON.parse(localStorage.getItem(SK));if(d&&d.up)M=Object.assign(M,d,{up:Object.assign(M.up,d.up)})}catch(e){}
+const save=()=>{try{localStorage.setItem(SK,JSON.stringify(M))}catch(e){}};
+
+const UP={atk:['⚔️','기본 공격력','+2 / Lv',12],hp:['❤️','최대 체력','+15 / Lv',12],gold:['🪙','시작 골드','+10 / Lv',8],xp:['📖','경험치 획득량','+10% / Lv',15],luck:['🍀','보물 등장 확률','+2% / Lv',20]};
+const cost=(k,l)=>C(UP[k][3]*1.5**l);
+const AB={
+ sword:['🗡️','강철 검','공격력 +20%',()=>G.atkM+=.2],
+ vamp:['🩸','흡혈','피해량의 8%만큼 체력 회복',()=>G.steal+=.08],
+ chain:['⚡','연쇄 번개','공격이 주변 적에게 35% 전파',()=>G.chain+=.35],
+ bers:['😡','광전사','체력이 낮을수록 공격력 최대 +50%',()=>G.bers+=.5],
+ regen:['💚','재생','초당 최대 체력의 1.2% 회복',()=>G.regen+=.012],
+ crit:['🎯','치명타 전문가','치명타 확률 +10%, 피해 +20%',()=>{G.crit+=.1;G.cdmg+=.2}],
+ time:['⏳','시간 왜곡','공격 속도 +20%',()=>G.aspd+=.2],
+ greed:['💰','탐욕','골드 획득량 +30%',()=>G.gM+=.3],
+ vit:['🛡️','강철 심장','최대 체력 +25%',()=>{const a=G.maxHp*.25;G.maxHp+=a;G.hp+=a}]
+};
+const MON=[[['🐀','쥐'],['🦇','박쥐'],['🟢','슬라임'],['👺','고블린']],[['💀','해골'],['🕷️','거미'],['🧟','좀비'],['🐺','늑대']],[['👻','유령'],['🦂','전갈'],['🧌','트롤'],['🐍','독사']],[['😈','악마'],['🐉','와이번'],['🗿','골렘'],['🧛','뱀파이어']],[['🌑','심연의 그림자'],['👁️','심연의 눈'],['🦑','심연의 촉수']]];
+const BOSS={10:'고블린 대장',20:'해골 기사단장',30:'그림자 군주',40:'용암 거인',50:'거대 골렘 타이탄',60:'서리 마녀',70:'피의 백작',80:'폭풍 드래곤',90:'타락한 영웅',100:'심연의 지배자'};
+const EV=[
+ ()=>({t:'⛲ 수상한 샘',d:'맑은 물이 솟아난다. 마셔볼까?',o:[['마신다',()=>{if(Math.random()<.6){heal(G.maxHp*.5);log('💧 체력이 크게 회복되었다!')}else{G.hp-=G.maxHp*.15;log('☠️ 물에 독이 섞여 있었다...')}}],['지나친다',()=>{}]]}),
+ ()=>{const c=C(30+G.floor*8);return{t:'🧙 방랑 상인',d:`공격력 +15%를 ${c}골드에 판다.`,o:[[`구매 (${c}G)`,()=>{if(G.gold>=c){G.gold-=c;G.atkM+=.15;log('🗡️ 공격력 +15%!')}else log('골드가 부족하다.')}],['거절',()=>{}]]}},
+ ()=>({t:'🔥 저주받은 제단',d:'최대 체력 15%를 바치면 힘을 얻는다.',o:[['바친다',()=>{G.maxHp*=.85;G.hp=Math.min(G.hp,G.maxHp);G.atkM+=.3;log('😈 공격력 +30%, 최대 체력 -15%')}],['거절',()=>{}]]})
+];
+
+const log=m=>{G.log.push(m);if(G.log.length>40)G.log.shift()};
+const heal=a=>{G.hp=Math.min(G.maxHp,G.hp+a)};
+const need=()=>C(14+9*G.lvl**1.6);
+const potCost=()=>20+G.floor*4;
+const bar=(v,m,c)=>`<div class=bar><i style="width:${Math.max(0,Math.min(100,v/m*100))}%;background:var(--${c})"></i></div>`;
+function modal(h){const m=$('#modal');m.hidden=!h;m.firstElementChild.innerHTML=h||''}
+
+function newRun(){
+ const u=M.up;
+ G={floor:0,lvl:1,xp:0,gold:10*u.gold,kills:0,maxHp:100+15*u.hp,atk:8+2*u.atk,aspd:1,crit:.05,cdmg:1.5,steal:0,regen:0,atkM:0,gM:1,xM:1+.1*u.xp,chain:0,bers:0,ab:{},en:[],pcd:0,poison:0,mode:'idle',log:[],auto:0,spd:1,pend:0,aw:0,fl:0,evo:[]};
+ G.hp=G.maxHp;log('던전에 입장했다. 최고 기록을 노려 보자!');
+}
+function chk(){if(G.hp<=0&&G.mode!=='dead'){die();return true}return false}
+function next(){
+ const f=++G.floor;G.aw=0;
+ if(f>1)heal(G.maxHp*.08);
+ log(`── ${f}층 ──`);
+ if(f>10&&f%10&&Math.random()<.15){const d=C(G.maxHp*.08);G.hp-=d;log(`🪤 함정에 걸렸다! -${d}`);if(chk())return}
+ if(f%10==0)return fight(1);
+ const lk=.12+Math.min(.18,.02*M.up.luck),r=Math.random();
+ if(r<lk)return treasure();
+ if(r<lk+.12)return event();
+ fight(0);
+}
+function fight(boss){
+ const f=G.floor,b=f<10?0:f<30?1:f<50?2:f<100?3:4,hp=12*1.1**f,at=2*1.065**f;
+ const mk=(m,h,a,x)=>({e:m[0],n:m[1],hp:h,mx:h,at:a,xm:x,iv:1.5,cd:RI(0,5)/10,fl:0});
+ if(boss)G.en=[Object.assign(mk([f%100?'👹':'🌌',BOSS[f]||`심연의 파수꾼 ${f/10}`],hp*4,at*1.4,4),{boss:1})];
+ else{
+  let c=f>=5&&Math.random()<.35?2:1;if(f>=20&&Math.random()<.2)c=3;
+  G.en=[];
+  for(let i=0;i<c;i++){const el=f>30&&Math.random()<.2,m=mk(pick(MON[b]),hp*(c>1?.65:1)*(el?2:1),at*(c>1?.8:1)*(el?1.3:1),el?2:1);if(el)m.n='정예 '+m.n;G.en.push(m)}
+ }
+ G.pcd=0;G.mode='fight';
+ log(boss?`🔥 보스 출현! ${G.en[0].n}`:`${G.en.map(e=>e.e).join('')} ${G.en.length>1?G.en.length+'마리 등장':G.en[0].n+' 등장'}`);
+}
+function hit(){
+ const t=G.en[0];let d=G.atk*(1+G.atkM)*(1+G.bers*(1-G.hp/G.maxHp));
+ if(Math.random()<Math.min(.9,G.crit)){d*=G.cdmg;log(`💥 치명타! ${C(d)}`)}
+ t.hp-=d;t.fl=.15;
+ if(G.chain)G.en.slice(1).forEach(e=>{e.hp-=d*G.chain;e.fl=.15});
+ if(G.steal)heal(d*G.steal);
+ for(const e of G.en)if(e.hp<=0)kill(e);
+ G.en=G.en.filter(e=>e.hp>0);
+}
+function kill(e){
+ const f=G.floor,x=C((4+1.6*f)*e.xm*G.xM),g=C((3+1.2*f)*e.xm*G.gM*(e.boss?3:1));
+ G.xp+=x;G.gold+=g;G.kills++;log(`☠️ ${e.n} 처치 (+${x}XP, +${g}G)`);
+ while(G.xp>=need()){G.xp-=need();G.lvl++;G.pend++;heal(G.maxHp*.1)}
+}
+function ehit(e){
+ G.hp-=e.at*R(.85,1.15);G.fl=.15;
+ if(G.floor>=51&&Math.random()<.3){if(G.poison<=0)log('🧪 중독되었다!');G.poison=4}
+}
+function cleared(){
+ G.poison=0;
+ if(G.floor%10==0){heal(G.maxHp*.3);log('🏆 보스를 쓰러뜨렸다! 체력 30% 회복')}
+ afterClear();
+}
+function afterClear(){if(G.pend>0)return lvlUp();G.mode='idle';G.aw=0}
+function lvlUp(t){
+ G.mode='modal';
+ const ks=Object.keys(AB).sort(()=>Math.random()-.5).slice(0,3);
+ modal(`<h3 style="margin:0">${t||'⬆️ 레벨 '+G.lvl+' 달성!'}</h3><div class=m>능력을 하나 선택하세요</div>`+ks.map(k=>{const a=AB[k],l=G.ab[k]||0;return`<button class=opt data-a=pick data-v=${k}>${a[0]} <b>${a[1]}</b> <span class=m>Lv.${l}→${l+1}</span><br><span class=m>${a[2]}</span></button>`}).join(''));
+}
+function treasure(){
+ const g=C((25+G.floor*7)*G.gM);G.gold+=g;heal(G.maxHp*.15);
+ log(`🎁 보물 상자! 골드 +${g}, 체력 소폭 회복`);
+ if(Math.random()<.25){log('✨ 희귀 보물! 능력을 하나 더 얻는다');G.pend++;lvlUp('✨ 희귀 보물 발견!')}else afterClear();
+}
+function event(){
+ G.mode='modal';const e=pick(EV)();G.evo=e.o;
+ modal(`<h3 style="margin:0">${e.t}</h3><p>${e.d}</p>`+e.o.map((o,i)=>`<button class=opt data-a=ev data-v=${i}>${o[0]}</button>`).join(''));
+}
+function die(){
+ const f=G.floor,s=Math.floor(f**1.3+G.gold/25+G.kills*.4),nb=f>M.best;
+ G.mode='dead';M.souls+=s;M.runs++;if(nb)M.best=f;save();
+ modal(`<h3 style="margin:0">☠️ ${f}층에서 쓰러졌다</h3>${nb?'<p>🏆 신기록!</p>':''}<p class=m>레벨 ${G.lvl} · 처치 ${G.kills} · 보유 골드 ${G.gold}</p><p>영혼석 <b>+${s}</b> 💎</p><button class="p big" data-a=lobby>영구 강화하러 가기</button>`);
+}
+
+function lobby(){
+ $('#game').hidden=true;const L=$('#lobby');L.hidden=false;
+ let h=`<h1>⚔️ 무한 던전</h1><p class=m style="text-align:center;margin:0 0 12px">층을 오르며 능력을 골라 나만의 빌드를 만드세요.<br>쓰러져도 영혼석으로 영구 강화됩니다.</p>`;
+ h+=`<div class=card><div class=row><span>🏰 최고 기록 <b>${M.best}층</b></span><span>💎 <b>${M.souls}</b></span></div><div class=m>도전 ${M.runs}회</div></div><div class=card><b>영구 강화</b>`;
+ for(const k in UP){const u=UP[k],l=M.up[k],c=cost(k,l);h+=`<div class=row style="margin-top:8px"><div>${u[0]} ${u[1]}<br><span class=m>Lv.${l} · ${u[2]}</span></div><button data-a=buy data-v=${k} ${M.souls<c?'disabled':''}>💎 ${c}</button></div>`}
+ L.innerHTML=h+`</div><button class="p big" data-a=start>${M.runs?'다시 도전':'탐험 시작'}</button>`;
+}
+function draw(){
+ if(!G)return;
+ $('#hud').innerHTML=`<div class=row><b>🏰 ${G.floor}층${G.floor%10==0?' 🔥':''}</b><span>Lv.${G.lvl}</span><span>🪙 ${G.gold}</span><span class=m>최고 ${M.best}층</span></div>${bar(G.xp,need(),'xp')}<div class=m>경험치 ${G.xp} / ${need()}</div>`;
+ $('#arena').innerHTML=`<div class="e ${G.fl>0?'fl':''}"><div class=em>🤺</div><b>나 ${C(G.hp)} / ${C(G.maxHp)}${G.poison>0?' 🧪':''}</b>${bar(G.hp,G.maxHp,'ok')}<span class=m>⚔️ ${C(G.atk*(1+G.atkM))} · ⚡ ${G.aspd.toFixed(1)} · 🎯 ${C(Math.min(.9,G.crit)*100)}%</span></div><div class=m style="text-align:center;margin:4px 0">VS</div><div class=es>`+(G.en.length?G.en.map(e=>`<div class="e ${e.fl>0?'fl':''}"><div class=em>${e.e}</div><b>${e.n}</b>${bar(e.hp,e.mx,'hp')}<span class=m>${C(e.hp)}</span></div>`).join(''):'<div class="e m">—</div>')+'</div>';
+ $('#log').innerHTML=G.log.slice(-7).reverse().map(l=>`<div>${l}</div>`).join('');
+ $('#abl').innerHTML=Object.keys(G.ab).length?Object.entries(G.ab).map(([k,l])=>`<span class=chip>${AB[k][0]} ${AB[k][1]} ${l}</span>`).join(''):'<span class=m>아직 능력이 없습니다. 레벨업하면 3개 중 하나를 고를 수 있어요.</span>';
+ $('#bn').disabled=G.mode!='idle';$('#bn').textContent=G.mode=='fight'?'⚔️ 전투 중...':'다음 층으로 ▶';
+ $('#bp').disabled=G.mode!='idle'||G.gold<potCost()||G.hp>=G.maxHp;$('#bp').textContent=`🧪 회복약 ${potCost()}G`;
+ $('#ba').className=G.auto?'on':'';
+ document.querySelectorAll('[data-a=spd]').forEach(b=>b.className=+b.dataset.v==G.spd?'on':'');
+}
+
+const A={
+ start(){newRun();$('#lobby').hidden=true;$('#game').hidden=false;next()},
+ lobby(){modal('');G=null;lobby()},
+ go(){if(G&&G.mode=='idle')next()},
+ pot(){if(G.mode=='idle'&&G.gold>=potCost()&&G.hp<G.maxHp){G.gold-=potCost();heal(G.maxHp*.35);log('🧪 회복약을 마셨다')}},
+ spd(v){G.spd=+v},
+ auto(){G.auto^=1},
+ pick(k){AB[k][3]();G.ab[k]=(G.ab[k]||0)+1;G.pend--;log(`${AB[k][0]} ${AB[k][1]} 획득!`);modal('');afterClear()},
+ ev(i){G.evo[i][1]();modal('');if(!chk())afterClear()},
+ buy(k){const c=cost(k,M.up[k]);if(M.souls>=c){M.souls-=c;M.up[k]++;save();lobby()}}
+};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(b&&!b.disabled&&A[b.dataset.a])A[b.dataset.a](b.dataset.v);draw()});
+
+let last=performance.now();
+setInterval(()=>{
+ const n=performance.now(),r=Math.min(.25,(n-last)/1000);last=n;
+ if(!G||G.mode=='dead')return;
+ const dt=r*G.spd;
+ if(G.mode=='fight'){
+  if(G.regen)heal(G.maxHp*G.regen*dt);
+  if(G.poison>0){G.poison-=dt;G.hp-=G.maxHp*.03*dt}
+  G.pcd+=dt;const iv=.8/G.aspd;
+  while(G.pcd>=iv&&G.en.length){G.pcd-=iv;hit()}
+  for(const e of G.en){e.cd+=dt;if(e.cd>=e.iv){e.cd-=e.iv;ehit(e)}}
+  G.en.forEach(e=>e.fl=Math.max(0,e.fl-dt));G.fl=Math.max(0,G.fl-dt);
+  if(chk())return;
+  if(!G.en.length)cleared();
+ }else if(G.mode=='idle'&&G.auto&&(G.aw+=r)>.7)next();
+ draw();
+},100);
+lobby();
+</script>
+</body>
+</html>
